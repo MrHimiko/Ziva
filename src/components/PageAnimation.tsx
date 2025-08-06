@@ -24,7 +24,7 @@ export const PageAnimation = ({
   return (
     <div className={className}>
       {isLoaded ? (
-        <div className="animate-entrance animate-entrance-delay-1">
+        <div className="">
           {children}
         </div>
       ) : null}
