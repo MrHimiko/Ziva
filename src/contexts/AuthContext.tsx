@@ -51,9 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(profile);
         } catch (error) {
             console.error('Failed to fetch user profile:', error);
-            // If token is invalid, clear it
+            // Clear tokens and redirect to login
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
+            navigate('/login');
         } finally {
             setIsLoading(false);
         }
@@ -96,6 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(profile);
         } catch (error) {
             console.error('Failed to refresh profile:', error);
+            // If refresh fails, logout
+            logout();
         }
     };
 
