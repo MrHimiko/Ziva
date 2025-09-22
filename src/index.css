@@ -3811,12 +3811,11 @@ code {
 .users-list {
     max-height: 400px;
     overflow-y: auto;
+    margin-top: 20px;
 }
 
 .user-item {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
     padding: 16px;
     border: 1px solid #E5E7EB;
     border-radius: 8px;
@@ -3825,9 +3824,16 @@ code {
 
 .user-info {
     display: flex;
-    align-items: center;
     gap: 12px;
     flex: 1;
+    align-items: center;
+    flex-direction: row;
+}
+
+.users-table-wrapper .user-info  {
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
 }
 
 .user-avatar {
@@ -3845,6 +3851,9 @@ code {
 
 .user-details {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
 .user-name {
