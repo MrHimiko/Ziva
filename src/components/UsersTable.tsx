@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CombinedUserProfile } from '../services/userService';
+import { riskGroupService } from '../services/riskGroupService';
 import UserProfileModal from './UserProfileModal';
 
 type SortKey = 'name' | 'email' | 'lastLogin' | 'status' | 'createdAt' | 'riskGroup' | 'age' | 'gender';
@@ -12,6 +13,11 @@ interface UsersTableProps {
     tableTitle?: string;
     maxRows?: number;
     onDataUpdate?: () => void;
+}
+
+interface UserRiskGroup {
+    userId: number;
+    groupName: string | null;
 }
 
 const UsersTable: React.FC<UsersTableProps> = ({ 
@@ -27,8 +33,34 @@ const UsersTable: React.FC<UsersTableProps> = ({
     const [sortConfig, setSortConfig] = useState<{ key: SortKey, direction: SortDirection }>({ key: 'name', direction: 'asc' });
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [userRiskGroups, setUserRiskGroups] = useState<Map<number, string>>(new Map());
 
-    // Add click outside listener to close dropdown
+    // Fetch risk groups for all users
+    useEffect(() => {
+        fetchAllUserRiskGroups();
+    }, [users]);
+
+    const fetchAllUserRiskGroups = async () => {
+        const riskGroupMap = new Map<number, string>();
+        
+        await Promise.all(
+            users.map(async (user) => {
+                try {
+                    const userGroups = await riskGroupService.getUserRiskGroups(user.id);
+                    if (userGroups.groups.length > 0) {
+                        riskGroupMap.set(user.id, userGroups.groups[0].groupName);
+                    } else {
+                        riskGroupMap.set(user.id, 'Unassigned');
+                    }
+                } catch (error) {
+                    riskGroupMap.set(user.id, 'Unassigned');
+                }
+            })
+        );
+        
+        setUserRiskGroups(riskGroupMap);
+    };
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (showActions !== null && !(event.target as Element).closest('.action-menu') && !(event.target as Element).closest('.action-menu-trigger')) {
@@ -73,7 +105,6 @@ const UsersTable: React.FC<UsersTableProps> = ({
         setShowProfileModal(true);
     };
 
-    // Helper functions
     const getDisplayName = (user: CombinedUserProfile): string => {
         if (user.firstName && user.lastName) {
             return `${user.firstName} ${user.lastName}`;
@@ -120,35 +151,13 @@ const UsersTable: React.FC<UsersTableProps> = ({
         return formatDate(dateString);
     };
 
-    const getRiskGroupBadgeClass = (riskGroup: string | null | undefined): string => {
-        switch (riskGroup) {
-            case 'high':
-                return 'high-risk-badge';
-            case 'moderate':
-                return 'moderate-risk-badge';
-            case 'average':
-                return 'low-risk-badge';
-            case 'control':
-                return 'control-group-badge';
-            default:
-                return 'control-group-badge';
-        }
-    };
-
-    const formatRiskGroup = (riskGroup: string | null | undefined): string => {
-        if (!riskGroup) return 'Unassigned';
-        switch (riskGroup) {
-            case 'high':
-                return 'High Risk';
-            case 'moderate':
-                return 'Moderate Risk';
-            case 'average':
-                return 'Average Risk';
-            case 'control':
-                return 'Control Group';
-            default:
-                return 'Unassigned';
-        }
+    const getRiskGroupBadgeClass = (groupName: string): string => {
+        const lowerName = groupName.toLowerCase();
+        if (lowerName.includes('high') || lowerName.includes('danger')) return 'high-risk-badge';
+        if (lowerName.includes('medium') || lowerName.includes('moderate')) return 'moderate-risk-badge';
+        if (lowerName.includes('low') || lowerName.includes('safe')) return 'low-risk-badge';
+        if (lowerName.includes('control')) return 'control-group-badge';
+        return 'unassigned-badge';
     };
 
     // Filter users
@@ -184,8 +193,8 @@ const UsersTable: React.FC<UsersTableProps> = ({
                 bValue = new Date(b.createdAt).getTime();
                 break;
             case 'riskGroup':
-                aValue = a.healthProfile?.riskGroup || 'z';
-                bValue = b.healthProfile?.riskGroup || 'z';
+                aValue = userRiskGroups.get(a.id) || 'Unassigned';
+                bValue = userRiskGroups.get(b.id) || 'Unassigned';
                 break;
             case 'age':
                 aValue = calculateAge(a.dateOfBirth) || 999;
@@ -208,7 +217,6 @@ const UsersTable: React.FC<UsersTableProps> = ({
         return 0;
     });
 
-    // Limit rows if maxRows is specified
     const displayUsers = maxRows ? sortedUsers.slice(0, maxRows) : sortedUsers;
 
     const renderSortIcon = (key: SortKey) => {
@@ -333,8 +341,8 @@ const UsersTable: React.FC<UsersTableProps> = ({
                                         <td>{calculateAge(user.dateOfBirth) || 'N/A'}</td>
                                         <td>{user.gender || 'N/A'}</td>
                                         <td>
-                                            <span className={`risk-badge ${getRiskGroupBadgeClass(user.healthProfile?.riskGroup)}`}>
-                                                {formatRiskGroup(user.healthProfile?.riskGroup)}
+                                            <span className={`risk-badge ${getRiskGroupBadgeClass(userRiskGroups.get(user.id) || 'Unassigned')}`}>
+                                                {userRiskGroups.get(user.id) || 'Unassigned'}
                                             </span>
                                         </td>
                                         <td>{getTimeSinceLastLogin(user.lastLoginAt)}</td>
@@ -392,7 +400,10 @@ const UsersTable: React.FC<UsersTableProps> = ({
                         setShowProfileModal(false);
                         setSelectedUserId(null);
                     }}
-                    onDataUpdate={onDataUpdate}
+                    onDataUpdate={() => {
+                        onDataUpdate?.();
+                        fetchAllUserRiskGroups(); // Refresh risk groups when profile is updated
+                    }}
                 />
             )}
         </>

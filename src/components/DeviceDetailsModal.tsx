@@ -7,6 +7,14 @@ interface DeviceDetailsModalProps {
     onClose: () => void;
 }
 
+// Mock device activity data interface
+interface DeviceActivityMetric {
+    id: string;
+    metricType: string;
+    value: number;
+    timestamp: string;
+}
+
 const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen, onClose }) => {
     if (!isOpen) return null;
 
@@ -38,11 +46,6 @@ const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen,
 
     // Generate random battery percentage for demo
     const batteryPercentage = Math.floor(Math.random() * 100);
-    const getBatteryColor = (battery: number): string => {
-        if (battery < 20) return '#EF4444';
-        if (battery < 50) return '#F59E0B';
-        return '#10B981';
-    };
 
     // Calculate signal strength from RSSI
     const getSignalStrength = (rssi: number): { percentage: number; quality: string } => {
@@ -56,6 +59,15 @@ const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen,
     };
 
     const signal = getSignalStrength(device.rssi);
+
+    // Mock device activity data for demonstration
+    const deviceActivity: { data: DeviceActivityMetric[] } = {
+        data: [
+            { id: '1', metricType: 'HRV', value: 45.2, timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString() },
+            { id: '2', metricType: 'BPM', value: 72, timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString() },
+            { id: '3', metricType: 'SPO2', value: 98, timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString() },
+        ]
+    };
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -93,16 +105,15 @@ const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen,
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                         <path d="M12 2L2 7V11C2 16.5228 5.47715 21.4463 10.3802 22.8025L12 23L13.6198 22.8025C18.5228 21.4463 22 16.5228 22 11V7L12 2Z" stroke="#6B7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     </svg>
-                                    <span>Serial: {device.id}</span>
+                                    <span>Serial: {device.id.substring(0, 12)}...</span>
                                 </div>
                                 <div className="info-item">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                         <rect x="1" y="6" width="22" height="12" rx="2" stroke="#6B7280" strokeWidth="2"/>
                                         <path d="M23 10V14" stroke="#6B7280" strokeWidth="2" strokeLinecap="round"/>
                                     </svg>
-                                    <span>Battery: Coming soon</span>
+                                    <span>Battery: {batteryPercentage}%</span>
                                 </div>
-
                             </div>
                         </div>
                     </div>
@@ -113,9 +124,11 @@ const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen,
                             <span className={`status-badge ${device.isConnectable ? 'connected' : 'disconnected'}`}>
                                 {device.isConnectable ? '● Connected' : '● Disconnected'}
                             </span>
-                            <span className="status-badge battery-low" style={{ display: batteryPercentage < 20 ? 'inline-flex' : 'none' }}>
-                                ⚠ Low Battery
-                            </span>
+                            {batteryPercentage < 20 && (
+                                <span className="status-badge battery-low">
+                                    ⚠ Low Battery
+                                </span>
+                            )}
                             <span className="status-badge synced">
                                 ↻ Synced
                             </span>
@@ -158,8 +171,29 @@ const DeviceDetailsModal: React.FC<DeviceDetailsModalProps> = ({ device, isOpen,
                                 <label>Created At</label>
                                 <p>{formatDate(device.createdAt)}</p>
                             </div>
-
                         </div>
+                    </div>
+
+                    {/* Activity Section */}
+                    <div className="device-activity-section">
+                        <h4>Recent Activity</h4>
+                        {deviceActivity.data.length > 0 ? (
+                            <div className="activity-list">
+                                {deviceActivity.data.map((metric: DeviceActivityMetric, index: number) => (
+                                    <div key={metric.id} className="activity-item">
+                                        <div className="activity-info">
+                                            <span className="activity-type">{metric.metricType.toUpperCase()}</span>
+                                            <span className="activity-value">{metric.value}</span>
+                                        </div>
+                                        <span className="activity-time">{getTimeSince(metric.timestamp)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="no-activity">
+                                <p>No recent activity data available</p>
+                            </div>
+                        )}
                     </div>
                 </div>
 

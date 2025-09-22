@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import { userService, CombinedUserProfile } from '../services/userService';
 import { eventService } from '../services/eventService';
+import { biometricService, BiometricResponse } from '../services/biometricService';
+import { riskGroupService } from '../services/riskGroupService';
 import { useNotification } from '../contexts/NotificationContext';
 import UsersTable from '../components/UsersTable';
 import {
@@ -34,9 +36,14 @@ const Dashboard: React.FC = () => {
     const [users, setUsers] = useState<CombinedUserProfile[]>([]);
     const [totalUsers, setTotalUsers] = useState(0);
     const [totalEvents, setTotalEvents] = useState(0);
-    const [usersWithRiskGroups, setUsersWithRiskGroups] = useState(0);
+    const [totalRiskGroups, setTotalRiskGroups] = useState(0);
     const [activeToday, setActiveToday] = useState(0);
-    const [riskGroupData, setRiskGroupData] = useState<Record<string, number>>({});
+    const [biometricOverview, setBiometricOverview] = useState<{
+        avgHRV?: number;
+        avgBPM?: number;
+        avgSPO2?: number;
+        avgBattery?: number;
+    }>({});
     const [eventsTimelineData, setEventsTimelineData] = useState<{ labels: string[], data: number[] }>({ labels: [], data: [] });
     const [isLoading, setIsLoading] = useState(true);
     const { showNotification } = useNotification();
@@ -49,14 +56,17 @@ const Dashboard: React.FC = () => {
         try {
             setIsLoading(true);
             
-            // Fetch users
-            const usersData = await userService.getCombinedUserProfiles();
+            // Fetch users and risk groups in parallel
+            const [usersData, eventsResponse, riskGroups] = await Promise.all([
+                userService.getCombinedUserProfiles(),
+                eventService.getEvents({ limit: 1 }),
+                riskGroupService.getAllRiskGroups().catch(() => []) // Don't fail if risk groups fail
+            ]);
+
             setUsers(usersData.slice(0, 10)); // Get first 10 for table
             setTotalUsers(usersData.length);
-            
-            // Calculate users with risk groups
-            const withRiskGroups = usersData.filter(user => user.healthProfile?.riskGroup).length;
-            setUsersWithRiskGroups(withRiskGroups);
+            setTotalEvents(eventsResponse.total);
+            setTotalRiskGroups(riskGroups.length);
             
             // Calculate active today
             const today = new Date();
@@ -67,41 +77,8 @@ const Dashboard: React.FC = () => {
             }).length;
             setActiveToday(activeTodayCount);
             
-            // Calculate risk group distribution
-            const riskGroups: Record<string, number> = {
-                'Unassigned': 0,
-                'High Risk': 0,
-                'Moderate Risk': 0,
-                'Average Risk': 0,
-                'Control Group': 0
-            };
-            
-            usersData.forEach(user => {
-                if (!user.healthProfile?.riskGroup) {
-                    riskGroups['Unassigned']++;
-                } else {
-                    switch (user.healthProfile.riskGroup) {
-                        case 'high':
-                            riskGroups['High Risk']++;
-                            break;
-                        case 'moderate':
-                            riskGroups['Moderate Risk']++;
-                            break;
-                        case 'average':
-                            riskGroups['Average Risk']++;
-                            break;
-                        case 'control':
-                            riskGroups['Control Group']++;
-                            break;
-                    }
-                }
-            });
-            
-            setRiskGroupData(riskGroups);
-            
-            // Fetch total events
-            const eventsResponse = await eventService.getEvents({ limit: 1 });
-            setTotalEvents(eventsResponse.total);
+            // Fetch biometric overview (last 7 days)
+            await fetchBiometricOverview();
             
             // Generate events timeline data (last 30 days)
             const timelineLabels: string[] = [];
@@ -125,97 +102,33 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    const getDisplayName = (user: CombinedUserProfile): string => {
-        if (user.firstName && user.lastName) {
-            return `${user.firstName} ${user.lastName}`;
+    const fetchBiometricOverview = async () => {
+        try {
+            const endDate = new Date().toISOString();
+            const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // Last 7 days
+
+            const params = {
+                startDate,
+                endDate,
+                limit: 1000
+            };
+
+            const [hrv, bpm, spo2, battery] = await Promise.allSettled([
+                biometricService.getHRV(params),
+                biometricService.getBPM(params),
+                biometricService.getSPO2(params),
+                biometricService.getBatteryLevel(params)
+            ]);
+
+            setBiometricOverview({
+                avgHRV: hrv.status === 'fulfilled' ? hrv.value.mean : undefined,
+                avgBPM: bpm.status === 'fulfilled' ? bpm.value.mean : undefined,
+                avgSPO2: spo2.status === 'fulfilled' ? spo2.value.mean : undefined,
+                avgBattery: battery.status === 'fulfilled' ? battery.value.mean : undefined
+            });
+        } catch (error) {
+            console.error('Failed to fetch biometric overview:', error);
         }
-        if (user.firstName) return user.firstName;
-        if (user.lastName) return user.lastName;
-        return user.email.split('@')[0];
-    };
-
-    const formatRiskGroup = (riskGroup: string | null | undefined): string => {
-        if (!riskGroup) return 'Unassigned';
-        switch (riskGroup) {
-            case 'high':
-                return 'High Risk';
-            case 'moderate':
-                return 'Moderate Risk';
-            case 'average':
-                return 'Average Risk';
-            case 'control':
-                return 'Control Group';
-            default:
-                return 'Unassigned';
-        }
-    };
-
-    const getRiskGroupBadgeClass = (riskGroup: string | null | undefined): string => {
-        switch (riskGroup) {
-            case 'high':
-                return 'high-risk-badge';
-            case 'moderate':
-                return 'moderate-risk-badge';
-            case 'average':
-                return 'low-risk-badge';
-            case 'control':
-                return 'control-group-badge';
-            default:
-                return 'control-group-badge';
-        }
-    };
-
-    // Risk Group Distribution Chart
-    const riskGroupChartData = {
-        labels: Object.keys(riskGroupData),
-        datasets: [
-            {
-                data: Object.values(riskGroupData),
-                backgroundColor: [
-                    '#9CA3AF', // Unassigned
-                    '#EF4444', // High Risk
-                    '#F59E0B', // Moderate Risk
-                    '#10B981', // Average Risk
-                    '#6D64D3', // Control Group
-                ],
-                borderWidth: 0,
-                cutout: '60%',
-            },
-        ],
-    };
-
-    const riskGroupChartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                display: true,
-                position: 'right' as const,
-                labels: {
-                    usePointStyle: true,
-                    pointStyle: 'circle',
-                    padding: 20,
-                    font: {
-                        size: 14,
-                    },
-                    color: '#052C58',
-                },
-            },
-            tooltip: {
-                backgroundColor: '#ffffff',
-                titleColor: '#052C58',
-                bodyColor: '#052C58',
-                borderColor: '#E5E7EB',
-                borderWidth: 1,
-                cornerRadius: 8,
-                displayColors: false,
-                callbacks: {
-                    label: function(context: any) {
-                        return `${context.label}: ${context.parsed} users`;
-                    },
-                },
-            },
-        },
     };
 
     // Events Timeline Chart
@@ -303,8 +216,6 @@ const Dashboard: React.FC = () => {
         );
     }
 
-    const usersWithRiskPercentage = totalUsers > 0 ? Math.round((usersWithRiskGroups / totalUsers) * 100) : 0;
-
     return (
         <>
             <Sidebar />
@@ -349,9 +260,8 @@ const Dashboard: React.FC = () => {
                                     <span className="span-item-procent">{totalEvents}</span>
                                 </div>
                                 <div className="grid-info-item">
-                                    <span className="text-op-60">Users with Risk Groups</span>
-                                    <span className="span-item-procent">{usersWithRiskPercentage}%</span>
-                                    <div className="text-12 text-op-60">{usersWithRiskGroups} of {totalUsers} users</div>
+                                    <span className="text-op-60">Risk Groups</span>
+                                    <span className="span-item-procent">{totalRiskGroups}</span>
                                 </div>
                                 <div className="grid-info-item">
                                     <span className="text-op-60">Active Today</span>
@@ -360,9 +270,53 @@ const Dashboard: React.FC = () => {
                             </div>
                         </section>
 
+                        {/* Biometric Overview */}
+                        <section className="animate-entrance animate-entrance-delay-3">
+                            <div className="biometric-overview-section">
+                                <h2 className="section-title">Biometric Overview (7 Days)</h2>
+                                <div className="biometric-overview-grid">
+                                    <div className="biometric-overview-card">
+                                        <div className="biometric-icon hrv">💓</div>
+                                        <div className="biometric-info">
+                                            <span className="biometric-label">Avg. HRV</span>
+                                            <span className="biometric-value">
+                                                {biometricOverview.avgHRV ? `${biometricOverview.avgHRV.toFixed(1)} ms` : 'N/A'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="biometric-overview-card">
+                                        <div className="biometric-icon bpm">❤️</div>
+                                        <div className="biometric-info">
+                                            <span className="biometric-label">Avg. Heart Rate</span>
+                                            <span className="biometric-value">
+                                                {biometricOverview.avgBPM ? `${biometricOverview.avgBPM.toFixed(0)} BPM` : 'N/A'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="biometric-overview-card">
+                                        <div className="biometric-icon spo2">🫁</div>
+                                        <div className="biometric-info">
+                                            <span className="biometric-label">Avg. Blood Oxygen</span>
+                                            <span className="biometric-value">
+                                                {biometricOverview.avgSPO2 ? `${biometricOverview.avgSPO2.toFixed(1)}%` : 'N/A'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="biometric-overview-card">
+                                        <div className="biometric-icon battery">🔋</div>
+                                        <div className="biometric-info">
+                                            <span className="biometric-label">Avg. Battery</span>
+                                            <span className="biometric-value">
+                                                {biometricOverview.avgBattery ? `${biometricOverview.avgBattery.toFixed(0)}%` : 'N/A'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                         <section className="">
                             <div className="users-table-wrapper">
-                                
                                 <h2
                                   className="table-title"
                                   style={{
@@ -383,23 +337,14 @@ const Dashboard: React.FC = () => {
                                       onDataUpdate={fetchDashboardData}
                                   />
                                 </section>
-
                             </div>  
                         </section>
 
                         <section className="animate-entrance animate-entrance-delay-4">
-                            <div className="grid-2">
-                                <div className="chart-wrapper">
-                                    <span className="semi-bold">Risk Group Distribution</span>
-                                    <div className="chart">
-                                        <Doughnut data={riskGroupChartData} options={riskGroupChartOptions} />
-                                    </div>
-                                </div>
-                                <div className="chart-wrapper">
-                                    <span className="semi-bold">Events Over Time (Last 30 Days)</span>
-                                    <div className="chart">
-                                        <Line data={eventsTimelineChartData} options={eventsTimelineChartOptions} />
-                                    </div>
+                            <div className="chart-wrapper">
+                                <span className="semi-bold">Events Over Time (Last 30 Days)</span>
+                                <div className="chart">
+                                    <Line data={eventsTimelineChartData} options={eventsTimelineChartOptions} />
                                 </div>
                             </div>
                         </section>

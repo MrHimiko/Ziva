@@ -7,6 +7,7 @@ import ProfileGeneralTab from './ProfileTabs/ProfileGeneralTab';
 import ProfileHealthTab from './ProfileTabs/ProfileHealthTab';
 import ProfileDevicesTab from './ProfileTabs/ProfileDevicesTab';
 import ProfileEventsTab from './ProfileTabs/ProfileEventsTab';
+import ProfileBiometricsTab from './ProfileTabs/ProfileBiometricsTab';
 
 export interface HealthProfile {
     id: number;
@@ -25,7 +26,7 @@ interface UserProfileModalProps {
 }
 
 const UserProfileModal: React.FC<UserProfileModalProps> = ({ userId, isOpen, onClose, onDataUpdate }) => {
-    const [activeTab, setActiveTab] = useState<'general' | 'health' | 'devices' | 'events'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'health' | 'biometrics' | 'devices' | 'events'>('general');
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -82,14 +83,11 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ userId, isOpen, onC
 
             const data = await response.json();
             
-            // Check if response is an empty array
             if (Array.isArray(data) && data.length === 0) {
                 setHealthProfile(null);
             } else if (Array.isArray(data) && data.length > 0) {
-                // If it returns an array with items, take the first one
                 setHealthProfile(data[0]);
             } else if (data && typeof data === 'object') {
-                // If it returns a single object
                 setHealthProfile(data);
             } else {
                 setHealthProfile(null);
@@ -178,7 +176,13 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ userId, isOpen, onC
                                     className={`profile-tab ${activeTab === 'health' ? 'active' : ''}`}
                                     onClick={() => setActiveTab('health')}
                                 >
-                                    Health Profile
+                                    Health & Risk Groups
+                                </button>
+                                <button 
+                                    className={`profile-tab ${activeTab === 'biometrics' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('biometrics')}
+                                >
+                                    Biometrics
                                 </button>
                                 <button 
                                     className={`profile-tab ${activeTab === 'devices' ? 'active' : ''}`}
@@ -201,12 +205,17 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ userId, isOpen, onC
 
                                 {activeTab === 'health' && (
                                     <ProfileHealthTab 
-                                        healthProfile={healthProfile} 
+                                        healthProfile={healthProfile}
+                                        userId={userId}
                                         onHealthProfileUpdate={(updatedProfile) => {
                                             setHealthProfile(updatedProfile);
-                                            onDataUpdate?.(); // Call the refresh function
+                                            onDataUpdate?.();
                                         }}
                                     />
+                                )}
+
+                                {activeTab === 'biometrics' && (
+                                    <ProfileBiometricsTab userId={userId} />
                                 )}
 
                                 {activeTab === 'devices' && (
